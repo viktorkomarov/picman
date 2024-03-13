@@ -16,7 +16,7 @@ type ImageRepository struct {
 const rwxForPublicMask = fs.FileMode(007)
 
 func validateDir(baseDir string) error {
-	stat, err := os.Stat(baseDir)
+	/*stat, err := os.Stat(baseDir)
 	if err != nil {
 		return fmt.Errorf("file.State: %w", err)
 	}
@@ -26,7 +26,7 @@ func validateDir(baseDir string) error {
 
 	if stat.Mode()&rwxForPublicMask != rwxForPublicMask {
 		return fmt.Errorf("%s should have rights for others(rwx)", baseDir)
-	}
+	}*/
 	return nil
 }
 
@@ -61,6 +61,7 @@ func (i *ImageRepository) SaveImage(image domain.Image) error {
 }
 
 func (i *ImageRepository) DeleteByName(name string) error {
+	// idempotent ?
 	return os.RemoveAll(i.normalizeFileName(name))
 }
 
