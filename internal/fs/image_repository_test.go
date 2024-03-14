@@ -57,6 +57,7 @@ func (s *ImageRepositoryTestSuite) TestSaveReadDeleteImages() {
 
 		image := domain.Image{Name: name, Payload: payload}
 		s.NoError(s.repo.SaveImage(image), "failed to save %s image", name)
+		s.ErrorIs(s.repo.SaveImage(image), domain.ErrImageAlreadyExists, "second save should return error")
 		return image
 	}
 
@@ -80,6 +81,9 @@ func (s *ImageRepositoryTestSuite) TestSaveReadDeleteImages() {
 	})
 
 	s.Run("delete images", func() {
+		s.NoError(s.repo.DeleteByName(bananaFileName), "failed to delete banana image")
+		s.NoError(s.repo.DeleteByName(catFileName), "failed to delete cat image")
+		// second delete shouldn't return err
 		s.NoError(s.repo.DeleteByName(bananaFileName), "failed to delete banana image")
 		s.NoError(s.repo.DeleteByName(catFileName), "failed to delete cat image")
 	})

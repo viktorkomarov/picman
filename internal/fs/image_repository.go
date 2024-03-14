@@ -1,32 +1,39 @@
 package fs
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 
+	"github.com/samber/lo"
 	"github.com/viktorkomarov/picman/internal/domain"
+	"github.com/viktorkomarov/picman/internal/fs/dir"
+	"github.com/viktorkomarov/picman/internal/utils/keylock"
+	"github.com/wneessen/go-fileperm"
 )
 
 type ImageRepository struct {
-	tmpDir  string
-	baseDir string
+	locker keylock.HashedMutex
+	files  *dir.Files
 }
 
-const rwxForPublicMask = fs.FileMode(007)
-
-func validateDir(baseDir string) error {
-	/*stat, err := os.Stat(baseDir)
+func validateDir(dir string) error {
+	stat, err := os.Stat(dir)
 	if err != nil {
-		return fmt.Errorf("file.State: %w", err)
+		return fmt.Errorf("os.Stat: %w", err)
 	}
 	if !stat.IsDir() {
-		return fmt.Errorf("%s isn't a direction", baseDir)
+		return fmt.Errorf("%s must be a direction", dir)
 	}
 
-	if stat.Mode()&rwxForPublicMask != rwxForPublicMask {
-		return fmt.Errorf("%s should have rights for others(rwx)", baseDir)
-	}*/
+	perm, err := fileperm.New(dir)
+	if err != nil {
+		return fmt.Errorf("fileperm.New: %w", err)
+	}
+	if !perm.UserReadable() || !perm.UserWritable() {
+		return fmt.Errorf("current user must have read and write rights")
+	}
 	return nil
 }
 
@@ -39,69 +46,67 @@ func NewImageRepository(tmpDir, baseDir string) (*ImageRepository, error) {
 	}
 
 	return &ImageRepository{
-		tmpDir:  tmpDir,
-		baseDir: baseDir,
+		files:  dir.NewFiles(tmpDir, baseDir),
+		locker: keylock.NewHashedMutex(100),
 	}, nil
 }
 
-func (i *ImageRepository) normalizeFileName(name string) string {
-	return fmt.Sprintf("%s/%s", i.baseDir, name)
+func (i *ImageRepository) withLock(key string, fn func() error) error {
+	i.locker.Lock(key)
+	defer i.locker.Unlock(key)
+	return fn()
 }
 
 func (i *ImageRepository) SaveImage(image domain.Image) error {
-	tmpFile, err := os.CreateTemp(i.tmpDir, image.Name)
-	if err != nil {
-		return fmt.Errorf("os.CreateTemp: %w", err)
-	}
-	if err := os.WriteFile(tmpFile.Name(), image.Payload, os.ModePerm); err != nil {
-		return fmt.Errorf("os.WriteFile: %w", err)
-	}
-	// todo::read about write to file atomically
-	return os.Rename(tmpFile.Name(), i.normalizeFileName(image.Name))
+	return i.withLock(image.Name, func() error {
+		_, err := i.files.GetByName(image.Name)
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+			return i.files.AddFile(i.files.NewFile(image.Name, image.Payload))
+		case err == nil:
+			return fmt.Errorf("%w: %s", domain.ErrImageAlreadyExists, image.Name)
+		default:
+			return fmt.Errorf("files.GetByName: %s", image.Name)
+		}
+	})
 }
 
 func (i *ImageRepository) DeleteByName(name string) error {
-	// idempotent ?
-	return os.RemoveAll(i.normalizeFileName(name))
-}
-
-func (i *ImageRepository) readImage(name string) (domain.Image, error) {
-	payload, err := os.ReadFile(i.normalizeFileName(name))
-	if err != nil {
-		return domain.Image{}, fmt.Errorf("os.Open: %w", err)
-	}
-	return domain.Image{
-		Name:    name,
-		Payload: payload,
-	}, nil
+	return i.withLock(name, func() error {
+		_, err := i.files.GetByName(name)
+		switch {
+		case errors.Is(err, fs.ErrNotExist):
+			return nil
+		case err == nil:
+			return i.files.DeleteByName(name)
+		default:
+			return fmt.Errorf("files.GetByName: %s", name)
+		}
+	})
 }
 
 func (i *ImageRepository) ListImages() ([]domain.Image, error) {
-	dirs, err := os.ReadDir(i.baseDir)
+	files, err := i.files.ListFiles()
 	if err != nil {
-		return nil, fmt.Errorf("os.Open: %w", err)
+		return nil, fmt.Errorf("ListFiles: %w", err)
 	}
 
-	out := make([]domain.Image, 0)
-	for _, dir := range dirs {
-		image, err := i.readImage(dir.Name())
-		if err != nil {
-			return nil, fmt.Errorf("readImage %s: %w", dir.Name(), err)
-		}
-
-		out = append(out, image)
-	}
-
-	return out, err
+	return lo.Map(files, func(file dir.File, _ int) domain.Image {
+		return fileToImage(file)
+	}), nil
 }
 
 func (i *ImageRepository) GetByName(name string) (domain.Image, error) {
-	payload, err := os.ReadFile(i.normalizeFileName(name))
+	file, err := i.files.GetByName(name)
 	if err != nil {
-		return domain.Image{}, fmt.Errorf("os.ReadFile: %w", err)
+		return domain.Image{}, fmt.Errorf("files.GetByName: %w", err)
 	}
+	return fileToImage(file), nil
+}
+
+func fileToImage(file dir.File) domain.Image {
 	return domain.Image{
-		Name:    name,
-		Payload: payload,
-	}, nil
+		Payload: file.Payload,
+		Name:    file.Name,
+	}
 }
