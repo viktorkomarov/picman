@@ -1,11 +1,14 @@
 package telegram
 
-type ApplyResponse[Response any] func(response Response)
+type UserEvent struct{}
 
-type PrepareСommand []interface {
-	HasNext() bool
-	Question() string
-}
+type Question struct{}
 
-type UseCase interface {
+type Output struct{}
+
+type UseCaseResult struct{}
+
+type UserCase interface {
+	Next() bool
+	Output() Output
 }
