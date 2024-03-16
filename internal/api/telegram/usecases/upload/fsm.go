@@ -1,83 +1,75 @@
 package upload
 
 import (
+	"errors"
+
 	"github.com/viktorkomarov/picman/internal/api/telegram"
-	"github.com/viktorkomarov/picman/internal/api/telegram/usecases/fsm"
+	"github.com/viktorkomarov/picman/internal/domain"
 )
 
 const (
-	setPayloadState      fsm.State = "set_payload"
-	setImageNameState    fsm.State = "set_image_name"
-	saveImageState       fsm.State = "save_image"
-	uploadCompletedState fsm.State = "upload_completed"
-	panicState           fsm.State = "panic_state"
+	setPayloadState         telegram.State = "set_payload"
+	setImageNameState       telegram.State = "set_image_name"
+	saveImageState          telegram.State = "save_image"
+	incorrectImageNameState telegram.State = "incorrect_image_name"
+	uploadCompletedState    telegram.State = "upload_completed"
+	panicState              telegram.State = "panic_state"
 )
 
-func uploadImageFSM() *fsm.UserCommunicationFSM {
-	return fsm.NewUserCommunicationFSM(
+func uploadImageFSM(useCase *UploadImageUseCase) *telegram.UserCommunicationFSM {
+	return telegram.NewUserCommunicationFSM(
 		setPayloadState,
-		map[fsm.State]fsm.StateConversation{
-			setPayloadState:      setPayloadStateConversation{},
-			setImageNameState:    setImageNameStateConversation{},
-			saveImageState:       saveImageStateConversation{},
-			uploadCompletedState: uploadCompletedStateConversation{},
-			panicState:           panicStateConversation{},
+		map[telegram.State]telegram.StateConversation{
+			setPayloadState:         telegram.NewBaseConversation(telegram.NewQuestionProvider("Загрузите файл изображения"), useCase.setPayloadAction),
+			setImageNameState:       telegram.NewBaseConversation(telegram.NewQuestionProvider("Укажите название изображения"), useCase.setImageNameAction),
+			saveImageState:          telegram.NewBaseConversation(telegram.SkipQuestionProvider(), useCase.saveImageAction),
+			incorrectImageNameState: telegram.NewBaseConversation(telegram.NewQuestionProvider("Некорректное название файла или Такой файл уже существует, укажите новое имя"), useCase.setImageNameAction),
 		},
-		map[fsm.State][]fsm.State{
-			setPayloadState:   {setImageNameState, panicState},
-			setImageNameState: {saveImageState, panicState},
-			saveImageState:    {uploadCompletedState, panicState},
+		map[telegram.State][]telegram.State{
+			setPayloadState:         {setImageNameState, panicState},
+			setImageNameState:       {setImageNameState, saveImageState, panicState},
+			incorrectImageNameState: {saveImageState, panicState},
+			saveImageState:          {incorrectImageNameState, uploadCompletedState, panicState},
 		},
-		[]fsm.State{uploadCompletedState, panicState},
+		map[telegram.State]telegram.TerminalState{
+			panicState:           nil,
+			uploadCompletedState: nil,
+		},
 	)
 }
 
-type setPayloadStateConversation struct{}
-
-func (s setPayloadStateConversation) Question() telegram.Question {
-	return telegram.Question{}
+func (u *UploadImageUseCase) setPayloadAction(fsmContex telegram.UseCaseContext, event telegram.UserEvent) telegram.StateResult {
+	err := u.imageBuilder.SetPayload(nil)
+	if err != nil {
+		return toPanicState(err)
+	}
+	return toNextState(setImageNameState)
 }
 
-func (s setPayloadStateConversation) ApplyEvent(event telegram.UserEvent) (fsm.State, error) {
-	return setImageNameState, nil
+func (u *UploadImageUseCase) setImageNameAction(fsmContex telegram.UseCaseContext, event telegram.UserEvent) telegram.StateResult {
+	err := u.imageBuilder.SetName("")
+	if err != nil {
+		return toNextState(incorrectImageNameState)
+	}
+	return toNextState(saveImageState)
 }
 
-type setImageNameStateConversation struct{}
+func (u *UploadImageUseCase) saveImageAction(fsmContex telegram.UseCaseContext, event telegram.UserEvent) telegram.StateResult {
+	err := u.saver.SaveImage(u.imageBuilder.Image())
+	if err == nil {
+		return toNextState(uploadCompletedState)
+	}
 
-func (s setImageNameStateConversation) Question() telegram.Question {
-	return telegram.Question{}
+	if errors.Is(err, domain.ErrImageAlreadyExists) {
+		return toNextState(incorrectImageNameState)
+	}
+	return toPanicState(err)
 }
 
-func (s setImageNameStateConversation) ApplyEvent(event telegram.UserEvent) (fsm.State, error) {
-	return setImageNameState, nil
+func toPanicState(err error) telegram.StateResult {
+	return telegram.NewStateResult(panicState, err.Error())
 }
 
-type saveImageStateConversation struct{}
-
-func (s saveImageStateConversation) Question() telegram.Question {
-	return telegram.Question{}
-}
-
-func (s saveImageStateConversation) ApplyEvent(event telegram.UserEvent) (fsm.State, error) {
-	return setImageNameState, nil
-}
-
-type uploadCompletedStateConversation struct{}
-
-func (s uploadCompletedStateConversation) Question() telegram.Question {
-	return telegram.Question{}
-}
-
-func (s uploadCompletedStateConversation) ApplyEvent(event telegram.UserEvent) (fsm.State, error) {
-	return setImageNameState, nil
-}
-
-type panicStateConversation struct{}
-
-func (s panicStateConversation) Question() telegram.Question {
-	return telegram.Question{}
-}
-
-func (s panicStateConversation) ApplyEvent(event telegram.UserEvent) (fsm.State, error) {
-	return setImageNameState, nil
+func toNextState(state telegram.State) telegram.StateResult {
+	return telegram.NewStateResult(state, "")
 }

@@ -1,24 +1,25 @@
-package fsm
+package telegram
 
 import (
-	"fmt"
-
 	"github.com/samber/lo"
-	"github.com/viktorkomarov/picman/internal/api/telegram"
 )
 
 type State string
 
 type StateConversation interface {
-	ApplyEvent(event telegram.UserEvent) (State, error)
-	Question() telegram.Question
+	ApplyEvent(UseCaseContext, UserEvent) StateResult
+	Question() QuestionProvider
+}
+
+type TerminalState interface {
+	Output() Output
 }
 
 type UserCommunicationFSM struct {
 	current        State
 	actions        map[State]StateConversation
 	transitions    map[State]map[State]bool
-	terminalStates map[State]bool
+	terminalStates map[State]TerminalState
 }
 
 func statesToSet(states []State) map[State]bool {
@@ -31,7 +32,7 @@ func NewUserCommunicationFSM(
 	init State,
 	actions map[State]StateConversation,
 	transitions map[State][]State,
-	terminalStates []State,
+	terminalStates map[State]TerminalState,
 ) *UserCommunicationFSM {
 	transitionSet := make(map[State]map[State]bool)
 	for state := range transitions {
@@ -42,34 +43,34 @@ func NewUserCommunicationFSM(
 		current:        init,
 		actions:        actions,
 		transitions:    transitionSet,
-		terminalStates: statesToSet(terminalStates),
+		terminalStates: terminalStates,
 	}
 }
 
-func (u *UserCommunicationFSM) CurrentQuestion() telegram.Question {
+func (u *UserCommunicationFSM) CurrentQuestion() QuestionProvider {
 	return u.actions[u.current].Question()
 }
 
-func (u *UserCommunicationFSM) Transit(event telegram.UserEvent) error {
-	action, ok := u.actions[u.current]
-	if !ok {
-		return fmt.Errorf("miconfigured fsm")
+func (u *UserCommunicationFSM) Transit(fsmContext UseCaseContext, event UserEvent) UseCaseContext {
+	action := u.actions[u.current]
+
+	stateResult := action.ApplyEvent(fsmContext, event)
+
+	currentTransitions := u.transitions[stateResult.NextState]
+	if !currentTransitions[stateResult.NextState] {
+		panic("miconfigured fsm")
 	}
 
-	nextState, err := action.ApplyEvent(event)
-	if err != nil {
-		return err
-	}
-
-	currentTransitions := u.transitions[nextState]
-	if !currentTransitions[nextState] {
-		return fmt.Errorf("miconfigured fsm")
-	}
-
-	u.current = nextState
-	return nil
+	u.current = stateResult.NextState
+	// add step
+	return fsmContext
 }
 
 func (u *UserCommunicationFSM) IsTerminalState() bool {
-	return u.terminalStates[u.current]
+	_, ok := u.terminalStates[u.current]
+	return ok
+}
+
+func (u *UserCommunicationFSM) Terminal() Output {
+	return u.terminalStates[u.current].Output()
 }

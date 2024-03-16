@@ -1,6 +1,25 @@
 package domain
 
-import "errors"
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"image"
+	"strings"
+)
+
+const (
+	formatGIF  = "gif"
+	formatPNG  = "png"
+	formatSVG  = "svg"
+	formatJPEG = "jpg"
+)
+
+var allFormats = []string{
+	formatGIF, formatPNG, formatSVG, formatJPEG,
+}
+
+var ErrIncorrectName error = fmt.Errorf("name format must be: __.[%s]", strings.Join(allFormats, ","))
 
 type Image struct {
 	Name    string
@@ -16,10 +35,24 @@ func NewImageBuilder() *ImageBuilder {
 }
 
 func (i *ImageBuilder) SetName(name string) error {
-	return nil
+	count := 0
+	for _, suffix := range allFormats {
+		if strings.HasSuffix(name, "."+suffix) {
+			count++
+		}
+	}
+	if count == 0 {
+		return nil
+	}
+	return ErrIncorrectName
 }
 
 func (i *ImageBuilder) SetPayload(payload []byte) error {
+	_, _, err := image.Decode(bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	i.image.Payload = payload
 	return nil
 }
 
