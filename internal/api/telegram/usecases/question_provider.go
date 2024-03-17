@@ -1,4 +1,4 @@
-package telegram
+package usecases
 
 type QuestionProvider struct {
 	skip     bool
@@ -11,4 +11,8 @@ func SkipQuestionProvider() QuestionProvider {
 
 func NewQuestionProvider(question string) QuestionProvider {
 	return QuestionProvider{question: question}
+}
+
+func (q QuestionProvider) ShouldAsk() bool {
+	return !q.skip
 }

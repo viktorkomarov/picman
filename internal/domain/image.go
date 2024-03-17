@@ -1,10 +1,8 @@
 package domain
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
-	"image"
 	"strings"
 )
 
@@ -41,17 +39,18 @@ func (i *ImageBuilder) SetName(name string) error {
 			count++
 		}
 	}
-	if count == 0 {
+	if count == 1 {
+		i.image.Name = name
 		return nil
 	}
 	return ErrIncorrectName
 }
 
 func (i *ImageBuilder) SetPayload(payload []byte) error {
-	_, _, err := image.Decode(bytes.NewReader(payload))
+	/*_, _, err := image.Decode(bytes.NewReader(payload))
 	if err != nil {
 		return err
-	}
+	}*/
 	i.image.Payload = payload
 	return nil
 }

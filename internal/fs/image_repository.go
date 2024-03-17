@@ -66,7 +66,7 @@ func (i *ImageRepository) SaveImage(image domain.Image) error {
 		case err == nil:
 			return fmt.Errorf("%w: %s", domain.ErrImageAlreadyExists, image.Name)
 		default:
-			return fmt.Errorf("files.GetByName: %s", image.Name)
+			return fmt.Errorf("files.GetByName[%s]: %w", image.Name, err)
 		}
 	})
 }

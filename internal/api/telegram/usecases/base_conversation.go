@@ -1,4 +1,4 @@
-package telegram
+package usecases
 
 type Action func(fsmContex UseCaseContext, event UserEvent) StateResult
 

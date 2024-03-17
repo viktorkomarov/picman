@@ -1,4 +1,4 @@
-package telegram
+package usecases
 
 import (
 	"github.com/samber/lo"
