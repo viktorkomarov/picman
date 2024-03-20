@@ -1,21 +1,26 @@
 package executor
 
-import "github.com/viktorkomarov/picman/internal/api/telegram"
+import (
+	"fmt"
+
+	"github.com/viktorkomarov/picman/internal/api/telegram"
+	"github.com/viktorkomarov/picman/internal/api/telegram/usecases/provider"
+)
 
 type ExecutorWatchdog struct {
-	inMessages chan telegram.Message
-	terminate  chan struct{}
+	inMessages  chan telegram.UserEvent
+	fsmProvider *provider.FSMBuilder
 
-	executor    *UseCaseExecution
-	outMessage  chan telegram.Message
-	fsmProvider interface{}
+	executor *UseCaseExecution
+	// shouldn't close this channel
+	terminate <-chan error
+	// should close this channel :с
+	outMessage chan telegram.UserEvent
 }
 
-func NewExecutorWatchdog(fsmProvider interface{}) *ExecutorWatchdog {
+func NewExecutorWatchdog(fsmProvider *provider.FSMBuilder) *ExecutorWatchdog {
 	watchdog := &ExecutorWatchdog{
-		inMessages:  make(chan telegram.Message),
-		terminate:   make(chan struct{}),
-		executor:    nil,
+		inMessages:  make(chan telegram.UserEvent),
 		fsmProvider: fsmProvider,
 	}
 	go watchdog.loop()
@@ -23,34 +28,39 @@ func NewExecutorWatchdog(fsmProvider interface{}) *ExecutorWatchdog {
 	return watchdog
 }
 
-func (e *ExecutorWatchdog) RecieveMessage(msg telegram.Message) {
+func (e *ExecutorWatchdog) RecieveMessage(msg telegram.UserEvent) {
 	e.inMessages <- msg
-}
-
-func (e *ExecutorWatchdog) Terminate() {
-	e.terminate <- struct{}{}
 }
 
 func (e *ExecutorWatchdog) loop() {
 	defer func() {
-		close(e.terminate)
 		close(e.outMessage)
 	}()
 
 	for {
 		select {
-		case <-e.terminate:
+		case err, ok := <-e.terminate:
+			if ok {
+				return
+			}
+			fmt.Println(err)
+			return
 		case msg, ok := <-e.inMessages:
 			if !ok {
 				return
 			}
 
 			if msg.IsCommand() {
-				e.outMessage = make(chan telegram.Message)
-				e.executor = NewUserExecution(nil, nil, e.outMessage)
+				e.spawnExecutionContext(msg.RawMessage.Chat.ID)
 			} else {
 				e.outMessage <- msg
 			}
 		}
 	}
+}
+
+func (e *ExecutorWatchdog) spawnExecutionContext(chatID int64) {
+	e.outMessage = make(chan telegram.UserEvent)
+	e.executor = NewUserExecution(e.fsmProvider.GetFSMByCommandType(telegram.FSMTypeUpload), e.outMessage, chatID)
+	e.terminate = e.executor.Run()
 }

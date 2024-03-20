@@ -1,45 +1,57 @@
 package executor
 
 import (
+	"errors"
+
 	"github.com/viktorkomarov/picman/internal/api/telegram"
-	"github.com/viktorkomarov/picman/internal/api/telegram/usecases"
 )
 
 type UseCaseExecution struct {
-	userHandler *UsersHub
-	useCase     usecases.UseCase
-	msg         <-chan telegram.Message
+	context telegram.FSMContext
+	fsm     *telegram.FSM
+	msg     <-chan telegram.UserEvent
 }
 
-func NewUserExecution(userHandler *UsersHub, useCase usecases.UseCase, msg <-chan telegram.Message) *UseCaseExecution {
+func NewUserExecution(fsm *telegram.FSM, msg <-chan telegram.UserEvent, chatID int64) *UseCaseExecution {
 	execution := &UseCaseExecution{
-		userHandler: userHandler,
-		useCase:     useCase,
+		fsm:     fsm,
+		msg:     msg,
+		context: telegram.NewFSMContext(chatID),
 	}
-	execution.run()
 
 	return execution
 }
 
-func (u *UseCaseExecution) run() {
-	var execContext usecases.UseCaseContext
+func (u *UseCaseExecution) Run() <-chan error {
+	errCh := make(chan error)
 
-	for u.useCase.Next() {
-		provider := u.useCase.Question()
-		if !provider.ShouldAsk() {
-			/*if err := u.userHandler.SendMessage(); err != nil {
-				// toPanicState
-			}*/
+	go func() {
+		defer close(errCh)
+
+		for {
+			if err := u.fsm.NotifyUser(u.context); err != nil {
+				errCh <- err
+				return
+			}
+
+			event, ok := <-u.msg
+			if !ok {
+				return
+			}
+
+			nextState := u.fsm.ApplyUserEvent(u.context, event)
+			u.context = u.context.WithPassedState(nextState)
+
+			err := u.fsm.Transit(nextState)
+			switch {
+			case errors.Is(err, telegram.ErrEndOfFSM):
+				return
+			case err != nil:
+				errCh <- err
+				return
+			}
 		}
+	}()
 
-		msg, ok := <-u.msg
-		if !ok {
-			return
-		}
-
-		passed := u.useCase.ApplyUserEvent(execContext, usecases.UserEvent{Msg: msg})
-		execContext = execContext.WithPassedState(passed)
-	}
-
-	// make output
+	return errCh
 }

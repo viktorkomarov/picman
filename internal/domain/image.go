@@ -1,20 +1,25 @@
 package domain
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
+	"image"
 	"strings"
+
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 )
 
 const (
 	formatGIF  = "gif"
 	formatPNG  = "png"
-	formatSVG  = "svg"
 	formatJPEG = "jpg"
 )
 
 var allFormats = []string{
-	formatGIF, formatPNG, formatSVG, formatJPEG,
+	formatGIF, formatPNG, formatJPEG,
 }
 
 var ErrIncorrectName error = fmt.Errorf("name format must be: __.[%s]", strings.Join(allFormats, ","))
@@ -47,10 +52,10 @@ func (i *ImageBuilder) SetName(name string) error {
 }
 
 func (i *ImageBuilder) SetPayload(payload []byte) error {
-	/*_, _, err := image.Decode(bytes.NewReader(payload))
+	_, _, err := image.Decode(bytes.NewReader(payload))
 	if err != nil {
 		return err
-	}*/
+	}
 	i.image.Payload = payload
 	return nil
 }
@@ -63,7 +68,7 @@ var ErrImageAlreadyExists error = errors.New("image already exists")
 
 type ImageRepository interface {
 	SaveImage(image Image) error
-	GetByName(name string) Image
+	GetByName(name string) (Image, error)
 	DeleteByName(name string) error
-	ListImages() []Image
+	ListImages() ([]Image, error)
 }

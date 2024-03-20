@@ -2,14 +2,13 @@ package bot
 
 import (
 	"context"
-	"fmt"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/viktorkomarov/picman/internal/api/telegram"
 )
 
 type MessageHandler interface {
-	OnRecieveUserMessage(msg telegram.Message)
+	OnRecieveUserMessage(msg telegram.UserEvent)
 }
 
 type MessageFilter interface {
@@ -17,18 +16,13 @@ type MessageFilter interface {
 }
 
 type RunBotConfig struct {
-	Token               string
 	OffsetInitial       int
 	PollIntervalSeconds int
 	MessageFilter       MessageFilter
 	MessageHandler      MessageHandler
 }
 
-func RunBot(ctx context.Context, cfg RunBotConfig) error {
-	bot, err := tgbotapi.NewBotAPI(cfg.Token)
-	if err != nil {
-		return fmt.Errorf("tgbotapi.NewBotAPI: %w", err)
-	}
+func RunBot(ctx context.Context, bot *tgbotapi.BotAPI, cfg RunBotConfig) error {
 	updateConfig := tgbotapi.NewUpdate(cfg.OffsetInitial)
 	updateConfig.Timeout = cfg.PollIntervalSeconds
 
@@ -36,10 +30,9 @@ func RunBot(ctx context.Context, cfg RunBotConfig) error {
 	for {
 		select {
 		case update := <-updateCh:
-			if !cfg.MessageFilter.ShouldExclude(update) {
-				// map
-				cfg.MessageHandler.OnRecieveUserMessage(telegram.Message{})
-			}
+			cfg.MessageHandler.OnRecieveUserMessage(telegram.UserEvent{
+				RawMessage: update.Message,
+			})
 		case <-ctx.Done():
 			return ctx.Err()
 		}
