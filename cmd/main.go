@@ -24,7 +24,7 @@ func main() {
 		Timeout: time.Second * 10,
 	}, tgbot)
 
-	dir, err := fs.NewImageRepository("/tmp", "/home/viktor/picman")
+	dir, err := fs.NewImageRepository("/tmp", "/home/viktor/picman/photos")
 	if err != nil {
 		panic(err)
 	}

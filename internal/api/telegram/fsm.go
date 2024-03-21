@@ -9,7 +9,7 @@ import (
 
 type StateAction interface {
 	NotifyUser(FSMContext) error
-	ApplyUserEvent(FSMContext, UserEvent) StateResult
+	ApplyUserEvent(FSMContext, <-chan UserEvent) StateResult
 }
 
 var (
@@ -59,7 +59,7 @@ func (f *FSM) NotifyUser(ctx FSMContext) error {
 	return f.actions[f.current].NotifyUser(ctx)
 }
 
-func (f *FSM) ApplyUserEvent(ctx FSMContext, event UserEvent) StateResult {
+func (f *FSM) ApplyUserEvent(ctx FSMContext, event <-chan UserEvent) StateResult {
 	return f.actions[f.current].ApplyUserEvent(ctx, event)
 }
 

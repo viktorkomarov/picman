@@ -2,6 +2,7 @@ package executor
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/viktorkomarov/picman/internal/api/telegram"
 )
@@ -30,16 +31,11 @@ func (u *UseCaseExecution) Run() <-chan error {
 
 		for {
 			if err := u.fsm.NotifyUser(u.context); err != nil {
-				errCh <- err
+				errCh <- fmt.Errorf("NotifyUser: %w", err)
 				return
 			}
 
-			event, ok := <-u.msg
-			if !ok {
-				return
-			}
-
-			nextState := u.fsm.ApplyUserEvent(u.context, event)
+			nextState := u.fsm.ApplyUserEvent(u.context, u.msg)
 			u.context = u.context.WithPassedState(nextState)
 
 			err := u.fsm.Transit(nextState)
@@ -47,7 +43,7 @@ func (u *UseCaseExecution) Run() <-chan error {
 			case errors.Is(err, telegram.ErrEndOfFSM):
 				return
 			case err != nil:
-				errCh <- err
+				errCh <- fmt.Errorf("Transit: %w", err)
 				return
 			}
 		}

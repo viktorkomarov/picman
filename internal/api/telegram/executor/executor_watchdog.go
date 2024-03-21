@@ -41,17 +41,16 @@ func (e *ExecutorWatchdog) loop() {
 		select {
 		case err, ok := <-e.terminate:
 			if ok {
+				fmt.Println(err)
 				return
 			}
-			fmt.Println(err)
-			return
 		case msg, ok := <-e.inMessages:
 			if !ok {
 				return
 			}
 
 			if msg.IsCommand() {
-				e.spawnExecutionContext(msg.RawMessage.Chat.ID)
+				e.spawnExecutionContext(msg)
 			} else {
 				e.outMessage <- msg
 			}
@@ -59,8 +58,8 @@ func (e *ExecutorWatchdog) loop() {
 	}
 }
 
-func (e *ExecutorWatchdog) spawnExecutionContext(chatID int64) {
+func (e *ExecutorWatchdog) spawnExecutionContext(event telegram.UserEvent) {
 	e.outMessage = make(chan telegram.UserEvent)
-	e.executor = NewUserExecution(e.fsmProvider.GetFSMByCommandType(telegram.FSMTypeUpload), e.outMessage, chatID)
+	e.executor = NewUserExecution(e.fsmProvider.GetFSMByCommandType(event.RawMessage.Text), e.outMessage, event.RawMessage.Chat.ID)
 	e.terminate = e.executor.Run()
 }

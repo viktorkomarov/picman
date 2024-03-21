@@ -74,7 +74,11 @@ func NewUploadImageFSM(saver domain.ImageRepository, bot *tgbotapi.BotAPI, fetch
 	)
 }
 
-func (u *uploadImageBox) setPayloadAction(fsmContex telegram.FSMContext, event telegram.UserEvent) telegram.StateResult {
+func (u *uploadImageBox) setPayloadAction(fsmContex telegram.FSMContext, eventCh <-chan telegram.UserEvent) telegram.StateResult {
+	event, ok := <-eventCh
+	if !ok {
+		return toPanicState(fmt.Errorf("expected to receive user event"))
+	}
 	if len(event.RawMessage.Photo) == 0 {
 		return toPanicState(fmt.Errorf("photo should be presented"))
 	}
@@ -91,7 +95,12 @@ func (u *uploadImageBox) setPayloadAction(fsmContex telegram.FSMContext, event t
 	return toNextState(setImageNameState)
 }
 
-func (u *uploadImageBox) setImageNameAction(fsmContex telegram.FSMContext, event telegram.UserEvent) telegram.StateResult {
+func (u *uploadImageBox) setImageNameAction(fsmContex telegram.FSMContext, eventCh <-chan telegram.UserEvent) telegram.StateResult {
+	event, ok := <-eventCh
+	if !ok {
+		return toPanicState(fmt.Errorf("expected to receive user event"))
+	}
+
 	err := u.imageBuilder.SetName(event.RawMessage.Text)
 	if err != nil {
 		return toNextState(incorrectImageNameState)
@@ -99,7 +108,7 @@ func (u *uploadImageBox) setImageNameAction(fsmContex telegram.FSMContext, event
 	return toNextState(saveImageState)
 }
 
-func (u *uploadImageBox) saveImageAction(fsmContex telegram.FSMContext, event telegram.UserEvent) telegram.StateResult {
+func (u *uploadImageBox) saveImageAction(fsmContex telegram.FSMContext, _ <-chan telegram.UserEvent) telegram.StateResult {
 	err := u.saver.SaveImage(u.imageBuilder.Image())
 	if err == nil {
 		return toNextState(uploadCompletedState)

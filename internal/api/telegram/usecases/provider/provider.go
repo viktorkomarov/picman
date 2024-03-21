@@ -3,6 +3,8 @@ package provider
 import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/viktorkomarov/picman/internal/api/telegram"
+	getimage "github.com/viktorkomarov/picman/internal/api/telegram/usecases/get_image"
+	listimages "github.com/viktorkomarov/picman/internal/api/telegram/usecases/list_images"
 	"github.com/viktorkomarov/picman/internal/api/telegram/usecases/upload"
 	"github.com/viktorkomarov/picman/internal/domain"
 	"github.com/viktorkomarov/picman/internal/fetcher"
@@ -22,10 +24,14 @@ func NewFSMBuilder(bot *tgbotapi.BotAPI, repo domain.ImageRepository, fetcher *f
 	}
 }
 
-func (f *FSMBuilder) GetFSMByCommandType(_type telegram.FSMType) *telegram.FSM {
+func (f *FSMBuilder) GetFSMByCommandType(_type string) *telegram.FSM {
 	switch _type {
-	case telegram.FSMTypeUpload:
+	case "/upload_image":
 		return upload.NewUploadImageFSM(f.repo, f.bot, f.fetcher)
+	case "/get_by_name":
+		return getimage.NewGetImageFSM(f.repo, f.bot)
+	case "/list_images_name":
+		return listimages.NewListImagesFSM(f.repo, f.bot)
 	default:
 		panic("todo")
 	}
