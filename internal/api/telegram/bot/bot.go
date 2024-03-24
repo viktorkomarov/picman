@@ -11,26 +11,24 @@ type MessageHandler interface {
 	OnRecieveUserMessage(msg telegram.UserEvent)
 }
 
-type MessageFilter interface {
-	ShouldExclude(update tgbotapi.Update) bool
-}
-
 type RunBotConfig struct {
-	OffsetInitial       int
-	PollIntervalSeconds int
-	MessageFilter       MessageFilter
-	MessageHandler      MessageHandler
+	MessageHandler MessageHandler
 }
 
-func RunBot(ctx context.Context, bot *tgbotapi.BotAPI, cfg RunBotConfig) error {
-	updateConfig := tgbotapi.NewUpdate(cfg.OffsetInitial)
-	updateConfig.Timeout = cfg.PollIntervalSeconds
-
-	updateCh := bot.GetUpdatesChan(updateConfig)
+func RunBot(
+	ctx context.Context,
+	cfg tgbotapi.UpdateConfig,
+	bot *tgbotapi.BotAPI,
+	receiver MessageHandler,
+) error {
+	updateCh := bot.GetUpdatesChan(cfg)
 	for {
 		select {
 		case update := <-updateCh:
-			cfg.MessageHandler.OnRecieveUserMessage(telegram.UserEvent{
+			if update.Message == nil {
+				continue
+			}
+			receiver.OnRecieveUserMessage(telegram.UserEvent{
 				RawMessage: update.Message,
 			})
 		case <-ctx.Done():

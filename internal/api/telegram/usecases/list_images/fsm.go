@@ -1,7 +1,6 @@
 package listimages
 
 import (
-	"fmt"
 	"strings"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
@@ -12,9 +11,9 @@ import (
 )
 
 const (
-	sendList   telegram.State = "send_list"
-	completed  telegram.State = "completed"
-	panicState telegram.State = "panic_state"
+	sendList  telegram.State = "send_list"
+	completed telegram.State = "completed"
+	panic     telegram.State = "panic"
 )
 
 type listImagesBox struct {
@@ -22,7 +21,7 @@ type listImagesBox struct {
 	bot  *tgbotapi.BotAPI
 }
 
-func NewListImagesFSM(repo domain.ImageRepository, bot *tgbotapi.BotAPI) *telegram.FSM {
+func NewFSM(repo domain.ImageRepository, bot *tgbotapi.BotAPI) *telegram.FSM {
 	box := &listImagesBox{
 		repo: repo,
 		bot:  bot,
@@ -31,30 +30,21 @@ func NewListImagesFSM(repo domain.ImageRepository, bot *tgbotapi.BotAPI) *telegr
 	return telegram.NewFSM(
 		sendList,
 		map[telegram.State]telegram.StateAction{
-			sendList: usecases.NewStateAction(
-				box.sendListImage,
-				usecases.EmptyAction(),
-			),
-			completed: usecases.NewStateAction(
-				usecases.EmptyNotifyFunc(),
-				usecases.EmptyAction(),
-			),
-			panicState: usecases.NewStateAction(
-				usecases.SendToUserMessage(bot, "Что-то пошло не так - повторите попозже"),
-				usecases.EmptyAction(),
-			),
+			sendList:  usecases.NewStateAction(usecases.EmptyNotifyFunc(), box.sendListImage),
+			completed: usecases.NewStateAction(usecases.EmptyNotifyFunc(), usecases.EmptyAction()),
+			panic:     usecases.NewStateAction(usecases.ErrorUserNotify(bot), usecases.EmptyAction()),
 		},
 		map[telegram.State][]telegram.State{
-			sendList: {completed, panicState},
+			sendList: {completed, panic},
 		},
-		[]telegram.State{completed, panicState},
+		[]telegram.State{completed, panic},
 	)
 }
 
-func (u *listImagesBox) sendListImage(ctx telegram.FSMContext) error {
+func (u *listImagesBox) sendListImage(ctx telegram.FSMContext, _ <-chan telegram.UserEvent) telegram.StateResult {
 	images, err := u.repo.ListImages()
 	if err != nil {
-		return fmt.Errorf("failed to find image:%w", err)
+		return usecases.ErrorState(panic, err)
 	}
 
 	onlyNames := lo.Map(images, func(image domain.Image, _ int) string {
@@ -64,17 +54,12 @@ func (u *listImagesBox) sendListImage(ctx telegram.FSMContext) error {
 
 	chatID, err := telegram.GetFromUseCaseContext[int64](ctx, "chatID")
 	if err != nil {
-		return err
+		return usecases.ErrorState(panic, err)
 	}
 
 	_, err = u.bot.Send(tgbotapi.NewMessage(chatID, formatMessage))
-	return err
-}
-
-func toPanicState(err error) telegram.StateResult {
-	return telegram.NewStateResult(panicState, err.Error())
-}
-
-func toNextState(state telegram.State) telegram.StateResult {
-	return telegram.NewStateResult(state, "")
+	if err != nil {
+		return usecases.ErrorState(panic, err)
+	}
+	return usecases.OkState(completed)
 }

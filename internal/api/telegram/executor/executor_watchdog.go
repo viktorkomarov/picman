@@ -34,7 +34,7 @@ func (e *ExecutorWatchdog) RecieveMessage(msg telegram.UserEvent) {
 
 func (e *ExecutorWatchdog) loop() {
 	defer func() {
-		close(e.outMessage)
+		e.closeExuctionContext()
 	}()
 
 	for {
@@ -42,15 +42,17 @@ func (e *ExecutorWatchdog) loop() {
 		case err, ok := <-e.terminate:
 			if ok {
 				fmt.Println(err)
-				return
 			}
+			e.closeExuctionContext()
 		case msg, ok := <-e.inMessages:
 			if !ok {
 				return
 			}
 
 			if msg.IsCommand() {
-				e.spawnExecutionContext(msg)
+				e.spawnExecutionContext(msg, msg.RawMessage.Text)
+			} else if e.executor == nil {
+				e.spawnExecutionContext(msg, "fallback")
 			} else {
 				e.outMessage <- msg
 			}
@@ -58,8 +60,15 @@ func (e *ExecutorWatchdog) loop() {
 	}
 }
 
-func (e *ExecutorWatchdog) spawnExecutionContext(event telegram.UserEvent) {
+func (e *ExecutorWatchdog) spawnExecutionContext(event telegram.UserEvent, command string) {
+	// close previous
 	e.outMessage = make(chan telegram.UserEvent)
-	e.executor = NewUserExecution(e.fsmProvider.GetFSMByCommandType(event.RawMessage.Text), e.outMessage, event.RawMessage.Chat.ID)
+	e.executor = NewUserExecution(e.fsmProvider.GetFSMByCommandType(command), e.outMessage, event.RawMessage.Chat.ID)
 	e.terminate = e.executor.Run()
+}
+
+func (e *ExecutorWatchdog) closeExuctionContext() {
+	close(e.outMessage)
+	e.executor = nil
+	e.terminate = nil
 }

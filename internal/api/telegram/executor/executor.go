@@ -31,7 +31,7 @@ func (u *UseCaseExecution) Run() <-chan error {
 
 		for {
 			if err := u.fsm.NotifyUser(u.context); err != nil {
-				errCh <- fmt.Errorf("NotifyUser: %w", err)
+				errCh <- fmt.Errorf("notifyUser: %w", err)
 				return
 			}
 
@@ -43,7 +43,7 @@ func (u *UseCaseExecution) Run() <-chan error {
 			case errors.Is(err, telegram.ErrEndOfFSM):
 				return
 			case err != nil:
-				errCh <- fmt.Errorf("Transit: %w", err)
+				errCh <- fmt.Errorf("transit: %w", err)
 				return
 			}
 		}

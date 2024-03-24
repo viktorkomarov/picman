@@ -3,13 +3,13 @@ package telegram
 type State string
 
 type StateResult struct {
-	NextState    State
-	FailedReason string
+	NextState State
+	Error     error
 }
 
-func NewStateResult(next State, failedReason string) StateResult {
+func NewStateResult(next State, err error) StateResult {
 	return StateResult{
-		NextState:    next,
-		FailedReason: failedReason,
+		NextState: next,
+		Error:     err,
 	}
 }

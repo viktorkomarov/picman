@@ -2,7 +2,7 @@ package main
 
 import (
 	"context"
-	"time"
+	"log"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/viktorkomarov/picman/internal/api/telegram/bot"
@@ -13,27 +13,20 @@ import (
 )
 
 func main() {
-	tgbot, err := tgbotapi.NewBotAPI("")
+	appConfig := mustParseConfig()
+
+	tgbot, err := tgbotapi.NewBotAPI(appConfig.TgBot.Token)
 	if err != nil {
-		panic(err)
+		log.Fatalf("failed to create bot: %s", err.Error())
 	}
-	cfg := tgbotapi.NewUpdate(0)
-	cfg.Timeout = 30
+	fetcher := fetcher.NewTelegramImageFetcher(appConfig.ImageFetcher, tgbot)
 
-	fetcher := fetcher.NewTelegramImageFetcher(fetcher.Config{
-		Timeout: time.Second * 10,
-	}, tgbot)
-
-	dir, err := fs.NewImageRepository("/tmp", "/home/viktor/picman/photos")
+	dir, err := fs.NewImageRepository(appConfig.FS.TMPPath, appConfig.FS.BasePath)
 	if err != nil {
-		panic(err)
+		log.Fatalf("failed to image repo: %s", err.Error())
 	}
 	fsmProvider := provider.NewFSMBuilder(tgbot, dir, fetcher)
 	userHub := executor.NewUserHub(fsmProvider)
 
-	bot.RunBot(context.Background(), tgbot, bot.RunBotConfig{
-		OffsetInitial:       0,
-		PollIntervalSeconds: 30,
-		MessageHandler:      userHub,
-	})
+	bot.RunBot(context.Background(), appConfig.TgBot.UpdateConfig, tgbot, userHub)
 }

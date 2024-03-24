@@ -1,6 +1,8 @@
 package usecases
 
 import (
+	"fmt"
+
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/viktorkomarov/picman/internal/api/telegram"
 )
@@ -28,15 +30,19 @@ func (s stateActionProxy) ApplyUserEvent(ctx telegram.FSMContext, event <-chan t
 	return s.applyUserEventFunc(ctx, event)
 }
 
-func SendToUserMessage(bot *tgbotapi.BotAPI, text string) func(telegram.FSMContext) error {
+func SendMessageNotifyFunc(bot *tgbotapi.BotAPI, text string) func(telegram.FSMContext) error {
 	return func(ctx telegram.FSMContext) error {
-		chatID, err := telegram.GetFromUseCaseContext[int64](ctx, "chatID")
-		if err != nil {
-			return err
-		}
-		_, err = bot.Send(tgbotapi.NewMessage(chatID, text))
+		return SendMessage(ctx, bot, text)
+	}
+}
+
+func SendMessage(ctx telegram.FSMContext, bot *tgbotapi.BotAPI, text string) error {
+	chatID, err := telegram.GetFromUseCaseContext[int64](ctx, "chatID")
+	if err != nil {
 		return err
 	}
+	_, err = bot.Send(tgbotapi.NewMessage(chatID, text))
+	return err
 }
 
 func EmptyNotifyFunc() func(telegram.FSMContext) error {
@@ -51,6 +57,34 @@ func EmptyAction() func(telegram.FSMContext, <-chan telegram.UserEvent) telegram
 	}
 }
 
-type FSMProvider interface {
-	GetFSMByCommandType(_type telegram.FSMType) *telegram.FSM
+func ActionWithEvent(
+	panicState telegram.State,
+	userFunc func(telegram.FSMContext, telegram.UserEvent) telegram.StateResult,
+) func(telegram.FSMContext, <-chan telegram.UserEvent) telegram.StateResult {
+	return func(f telegram.FSMContext, c <-chan telegram.UserEvent) telegram.StateResult {
+		event, ok := <-c
+		if !ok {
+			return ErrorState(panicState, fmt.Errorf("expected to receive user event"))
+		}
+		return userFunc(f, event)
+	}
+}
+
+func ErrorUserNotify(bot *tgbotapi.BotAPI) func(telegram.FSMContext) error {
+	return func(ctx telegram.FSMContext) error {
+		state := ctx.LastState()
+		if state.Error == nil {
+			return nil
+		}
+
+		return SendMessage(ctx, bot, fmt.Sprintf("В процессе операции возникли проблемы: %s", state.Error.Error()))
+	}
+}
+
+func ErrorState(next telegram.State, err error) telegram.StateResult {
+	return telegram.NewStateResult(next, err)
+}
+
+func OkState(state telegram.State) telegram.StateResult {
+	return telegram.NewStateResult(state, nil)
 }

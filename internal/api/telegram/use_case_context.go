@@ -31,6 +31,10 @@ func GetFromUseCaseContext[A any](useCaseContext FSMContext, key string) (A, err
 	return typedData, nil
 }
 
+func (u FSMContext) LastState() StateResult {
+	return u.stages[len(u.stages)-1] // len check ?
+}
+
 func (u FSMContext) WithPassedState(state StateResult) FSMContext {
 	return FSMContext{
 		stages:  append(u.stages, state),
